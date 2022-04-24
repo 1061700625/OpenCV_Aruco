@@ -1,12 +1,13 @@
 #include <iostream>
+#include <Eigen/Core>
+#include <Eigen/Geometry>
 #include <opencv2/aruco/charuco.hpp>
 #include <opencv2/aruco.hpp>
 #include <opencv2/aruco/dictionary.hpp>
-#include <opencv2/core/core.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
-#include <opencv2/core/types_c.h>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/calib3d.hpp>
+#include <opencv2/core/eigen.hpp>
 #include "ellipse.h"
 #include "aamed/FLED.h"
 
@@ -15,6 +16,41 @@
 using namespace std;
 using namespace cv;
 using namespace dnn;
+
+
+
+double fx = 1518.20343;
+double fy = 1518.20455;
+double cx = 1225.37396;
+double cy = 706.10526 ;
+double k1 = 0.11958819;
+double k2 = 0.08017163;
+double k3 = -0.57926243;
+double p1 = 0.00323947;
+double p2 = -0.00172068;
+// 内参矩阵
+cv::Mat cameraMatrix = (cv::Mat_<float>(3, 3) <<
+                                                fx, 0.0, cx,
+                                                0.0, fy, cy,
+                                                0.0, 0.0, 1.0);
+// 畸变矩阵
+cv::Mat distCoeffs = (cv::Mat_<float>(5, 1) << k1, k2, p1, p2, k3);
+/*************************************预处理******************************************************/
+// 加载用于生成标记的字典。
+Ptr<cv::aruco::Dictionary> dictionary = getPredefinedDictionary(cv::aruco::DICT_6X6_100);
+// board对象指针，在后面有create函数来实际创建
+// 下面这些参数需要用来计算相机位姿
+float squareLength = 0.025;
+float markerLength = 0.015;
+float markerSeparation = 0.005;
+cv::Ptr<cv::aruco::GridBoard> board =  cv::aruco::GridBoard::create(
+        3,             //每行多少个Marker
+        3,             //每列多少个Marker
+        markerLength,          //marker长度, m
+        markerSeparation,           //marker之间的间隔, m
+        dictionary);   //字典
+
+
 
 void siftTest() {
     int64 t1, t2;
@@ -188,6 +224,7 @@ void AAMED_Fled(Mat &imgC, Mat &result, vector<Mat> &results) {
 
     cv::RotatedRect temp;
     Mat mask = Mat::zeros(imgC.size(), CV_8UC1);
+    //results.clear();
     for (int i = 0; i < aamed.detEllipses.size(); i++) {
         Mat mask_temp = Mat::zeros(imgC.size(), CV_8UC1);
         Mat result_temp;
@@ -214,7 +251,6 @@ void AAMED_Fled(Mat &imgC, Mat &result, vector<Mat> &results) {
 
 vector<Mat> generateAruco(int nums, int pixSize=200, int border=1) {
     vector<Mat> markerImages;
-    Ptr<cv::aruco::Dictionary> dictionary = aruco::getPredefinedDictionary(cv::aruco::DICT_4X4_50);
     for (int i = 0; i < nums; ++i) {
         Mat tempImage;
         aruco::drawMarker(dictionary, i, pixSize, tempImage, border);
@@ -225,13 +261,21 @@ vector<Mat> generateAruco(int nums, int pixSize=200, int border=1) {
     return markerImages;
 }
 
-void detectAruco(const Mat& markerImage, vector<vector<Point2f>> &markerCorners, vector<vector<Point2f>> &rejectedCandidates, vector<int> &markerIds, Ptr<cv::aruco::Dictionary> dictionary, cv::Ptr<cv::aruco::GridBoard> board) {
+void detectAruco(const Mat& markerImage, vector<vector<Point2f>> &markerCorners, vector<vector<Point2f>> &rejectedCandidates, vector<int> &markerIds) {
     // 使用默认值初始化检测器参数
     Ptr<cv::aruco::DetectorParameters> parameters = cv::aruco::DetectorParameters::create();
     // 检测标记
     cv::aruco::detectMarkers(markerImage, dictionary, markerCorners, markerIds, parameters, rejectedCandidates);
     // 精细化再检测
-    cv::aruco::refineDetectedMarkers(markerImage, board, markerCorners, markerIds, rejectedCandidates);
+    //cv::aruco::refineDetectedMarkers(markerImage, board, markerCorners, markerIds, rejectedCandidates);
+}
+
+void detectDiamon(Mat& markerImage, vector<vector<Point2f>> &markerCorners, vector<int> &markerIds, vector<vector<Point2f>> &diamondCorners, vector<Vec4i> &diamondIds) {
+    if (markerCorners.empty()) {
+        return;
+    }
+    // detect diamon diamonds
+    cv::aruco::detectCharucoDiamond(markerImage, markerCorners, markerIds, squareLength / markerLength, diamondCorners, diamondIds);
 }
 
 void estimatePose(vector<vector<Point2f>> &markerCorners, vector<int> &markerIds) {
@@ -239,75 +283,65 @@ void estimatePose(vector<vector<Point2f>> &markerCorners, vector<int> &markerIds
     //cv::aruco::estimatePoseBoard(markerCorners, markerIds, board, cameraMatrix, distCoeffs, rvec, tvec);
 }
 
-int main(int argc, char* argv[])
-{
-    // 内参不知道哪个老哥整出来的
-    double fx, fy, cx, cy, k1, k2, k3, p1, p2;
-    fx = 604.5184;
-    fy = 609.43059;
-    cx = 397.4317;
-    cy = 298.7116 ;
-    k1 = 0.0406;
-    k2 = -0.0774;
-    k3 = 0;
-    p1 = 1.8049e-4;
-    p2 = 0;
-    // 内参矩阵
-    cv::Mat cameraMatrix = (cv::Mat_<float>(3, 3) <<
-                                                    fx, 0.0, cx,
-                                                    0.0, fy, cy,
-                                                    0.0, 0.0, 1.0);
-    // 畸变矩阵
-    cv::Mat distCoeffs = (cv::Mat_<float>(5, 1) << k1, k2, p1, p2, k3);
-    /*************************************预处理******************************************************/
-    // 加载用于生成标记的字典。
-    Ptr<cv::aruco::Dictionary> dictionary = getPredefinedDictionary(cv::aruco::DICT_4X4_50);
+void testCamera() {
+    Mat frame;
+    VideoCapture capture;
+    // open the default camera using default API
+    // cap.open(0);
+    // OR advance usage: select any API backend
+    int deviceID = 0;             // 0 = open default camera
+    int apiID = cv::CAP_ANY;      // 0 = autodetect default API
+    // open selected camera using selected API
+    capture.open(deviceID, apiID);
+    // check if we succeeded
+    if (!capture.isOpened()) {
+        cerr << "ERROR! Unable to open camera\n";
+        return;
+    }
+    for (;;) {
+        capture.read(frame);
+        // check if we succeeded
+        if (frame.empty()) {
+            cerr << "ERROR! blank frame grabbed\n";
+            break;
+        }
+        // show live and wait for a key with timeout long enough to show images
+        imshow("Live", frame);
+        if (waitKey(5) >= 0)
+            break;
+    }
+}
 
-    // board对象指针，在后面有create函数来实际创建
-    // 下面这些参数需要用来计算相机位姿
-    cv::Ptr<cv::aruco::GridBoard> board =  cv::aruco::GridBoard::create(
-            2,             //每行多少个Marker
-            2,             //每列多少个Marker
-            0.04,          //marker长度, m
-            0.01,           //marker之间的间隔, m
-            dictionary);   //字典
-    Mat boardImage;
-    board->draw( cv::Size(200, 200),  // 整个board的大小
-                 boardImage,                         // 返回的图像
-                 10,                            // 整个board的边距
-                 1 );                           // 每个码内的边距
-    imwrite("../boardImage.png", boardImage);
 
-    //vector<Mat> markerImages = generateAruco(5);
-    //Mat markerImage = markerImages[0];
-    Mat markerImage = imread("../1.png", 1);
-    Mat markerImageCopy;
-    markerImage.copyTo(markerImageCopy);
-
-    cout<<">> 预处理完成!"<<endl;
-    /************************************************************************************************/
-
+Mat testDetect(Mat &markerImage, bool diamond = true, bool aamed=false) {
     /*************************************检测椭圆*****************************************************/
     // FeaturePoint(img ,img2);
-    //EDCircle(markerImage);
+    // EDCircle(markerImage);
     vector<Mat> results;
     Mat fullSplitImage;
-    AAMED_Fled(markerImage, fullSplitImage, results);
+    if(aamed) {
+        AAMED_Fled(markerImage, fullSplitImage, results);
+    }else {
+        results.emplace_back(markerImage);
+        fullSplitImage = markerImage.clone();
+    }
     /************************************************************************************************/
 
     // 对每个椭圆区域进行检测
-    for (const auto& cropSplitImage: results) {
+    for (auto& cropSplitImage: results) {
         //　检测Aruco
+        vector<vector<Point2f>> diamondCorners;
+        vector<cv::Vec4i> diamondIds;
         vector<vector<Point2f>> markerCorners;
-        vector<vector<Point2f>> rejectedCandidates;
         vector<int> markerIds;
-        // cv::copyMakeBorder(markerImage, markerImage, 5, 5, 5, 5, cv::BORDER_CONSTANT, Scalar(255,0,0));
-        detectAruco(cropSplitImage, markerCorners, rejectedCandidates, markerIds, dictionary, board);
+        vector<vector<Point2f>> rejectedCandidates;
+
+        // cv::copyMakeBorder(cropSplitImage, cropSplitImage, 5, 5, 5, 5, cv::BORDER_CONSTANT, Scalar(255,0,0));
+        detectAruco(cropSplitImage, markerCorners, rejectedCandidates, markerIds);
         if (markerCorners.empty()) {
             cout<<"无可用Marker"<<endl;
-            return 0;
+            return fullSplitImage;
         }
-
         // 显示检测到的但是由于字典对不上被拒绝的Marker
         if (!rejectedCandidates.empty()){
             cout<<"一共有 "<<rejectedCandidates.size()<<" 个被拒绝的 Marker "<<endl;
@@ -317,39 +351,113 @@ int main(int argc, char* argv[])
                 }
             }
         }
+        if(diamond) {
+            detectDiamon(cropSplitImage, markerCorners, markerIds, diamondCorners, diamondIds);
+        }
 
-        // 显示正确的Marker
-        if (!markerIds.empty()) {
+        std::vector<cv::Vec3d> rvecs, tvecs;
+        cv::Vec3d rvec, tvec;
+        if(diamond) {
+            if (diamondIds.empty()) {
+                cout<<"无可用diamondIds"<<endl;
+                continue;
+            }
+            // 绘制检测边框
+            cv::aruco::drawDetectedDiamonds(fullSplitImage, diamondCorners, diamondIds);
+            // 估计相机位姿(相对于每一个marker)  markerLength为什么是squareLength?
+            cv::aruco::estimatePoseSingleMarkers(diamondCorners, markerLength, cameraMatrix, distCoeffs, rvecs, tvecs);
+        }else {
+            if (markerIds.empty()){
+                cout<<"无可用markerIds"<<endl;
+                continue;
+            }
             // 绘制检测边框
             cv::aruco::drawDetectedMarkers(fullSplitImage, markerCorners, markerIds);
-
-            std::vector<cv::Vec3d> rvecs, tvecs;
-            cv::Vec3d rvec, tvec;
             // 估计相机位姿(相对于每一个marker)
-            //cv::aruco::estimatePoseSingleMarkers(markerCorners, 0.055, cameraMatrix, distCoeffs, rvecs, tvecs);
+            // cv::aruco::estimatePoseSingleMarkers(markerCorners, squareLength, cameraMatrix, distCoeffs, rvecs, tvecs);
             // 估计相机位姿(相对于 aruco 板)
             cv::aruco::estimatePoseBoard(markerCorners, markerIds, board, cameraMatrix, distCoeffs, rvec, tvec); rvecs.emplace_back(rvec); tvecs.emplace_back(tvec);
-            // 为每个标记画轴
-            for (int i = 0; i < rvecs.size(); ++i) {
-                rvec = rvecs[i];
-                tvec = tvecs[i];
-                // 得到的位姿估计是：从board坐标系到相机坐标系的
-                cv::Mat R;
-                cv::Rodrigues(rvec,R);
-                cout << "R_{camera<---marker} :" << R << endl;
-                cout << "t_{camera<---marker} :" << tvec << endl;
-                cout << endl;
-                cv::aruco::drawAxis(fullSplitImage, cameraMatrix, distCoeffs, rvec, tvec, 0.1);
-                cv::aruco::drawAxis(markerImage, cameraMatrix, distCoeffs, rvec, tvec, 0.1);
-            }
+        }
+        // 为每个标记画轴
+        for (int i = 0; i < rvecs.size(); ++i) {
+            rvec = rvecs[i];
+            tvec = tvecs[i];
+            // 得到的位姿估计是：从board坐标系到相机坐标系的
+            cv::Mat R;
+            cv::Rodrigues(rvec,R);
+            cout << "R_{camera<---marker} :" << R << endl;
+            cout << "t_{camera<---marker} :" << tvec << endl;
+            Eigen::Matrix3d R_eigen;
+            cv::cv2eigen(R,R_eigen);
+            // Eigen中使用右乘的顺序, 因此ZYX对应的是012, 实际上这个编号跟乘法的顺序一致就可以了(从左向右看的顺序)
+            Eigen::Vector3d zyx_Euler_fromR = R_eigen.eulerAngles(0,1,2);
+            cout << "zyx旋转欧拉角[输出顺序为:x,y,z]: " << (180)/(M_PI)*zyx_Euler_fromR.transpose()<<endl;
+            cv::aruco::drawAxis(fullSplitImage, cameraMatrix, distCoeffs, rvec, tvec, 0.1);
+            //cv::aruco::drawAxis(markerImage, cameraMatrix, distCoeffs, rvec, tvec, 0.1);
+            cout << "--------------------------------------------" << endl;
         }
     }
 
-    imshow("markerImage", markerImage);
-    imshow("fullSplitImage", fullSplitImage);
+    if (aamed) {
+        imshow("markerImage", markerImage);
+        //imshow("fullSplitImage", fullSplitImage);
+        //imwrite("../fullSplitImage.png", fullSplitImage);
+    }
+    // waitKey(0);
+    return fullSplitImage;
+}
 
-    // imwrite("../markerImage.png", markerImage);
+int main(int argc, char* argv[])
+{
+    Mat fullSplitImage;
+    Mat boardImage;
+    board->draw( cv::Size(200, 200),  // 整个board的大小
+                 boardImage,                         // 返回的图像
+                 10,                            // 整个board的边距
+                 1 );                           // 每个码内的边距
+    imwrite("../boardImage.png", boardImage);
+    cv::aruco::drawCharucoDiamond(dictionary, cv::Vec4i(0,1,2,3), 200, 150, boardImage);
+    imwrite("../diamondImage.png", boardImage);
+    //vector<Mat> markerImages = generateAruco(5);
+    //Mat markerImage = markerImages[0];
+    cout<<">> 预处理完成!"<<endl;
+
+    /*
+    Mat markerImage = imread("../1.png", 1);
+    fullSplitImage = testDetect(markerImage, true, false);
+    imshow("fullSplitImage", fullSplitImage);
     waitKey(0);
+    return 0;
+    */
+
+    /************************************************************************************************/
+    float t1, t2, tdelt;
+    Mat frame;
+    VideoCapture capture;
+    capture.open(0);
+    if (!capture.isOpened()) {
+        cerr << "ERROR! Unable to open camera\n";
+        return -1;
+    }
+
+    cv::namedWindow("fullSplitImage",0);
+    cv::resizeWindow("fullSplitImage", 960, 540);
+    for (;;) {
+        capture.read(frame);
+        if (frame.empty()) {
+            cerr << "ERROR! blank frame grabbed\n";
+            break;
+        }
+        t1 = cv::getTickCount();
+        fullSplitImage = testDetect(frame, true, false);
+        t2 = cv::getTickCount();
+        tdelt = 1000.0*(t2-t1) / cv::getTickFrequency();
+        std::cout << "一帧耗时(ms)：" << tdelt << std::endl;
+        imshow("fullSplitImage", fullSplitImage.empty() ? frame : fullSplitImage);
+        if (waitKey(1) >= 0)
+            break;
+    }
+
     return 0;
 }
 

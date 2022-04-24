@@ -16,6 +16,6 @@ aux_source_directory(./ED_Lib SOURCE_ED)
 
 add_executable(demo
         main.cpp ellipse.cpp ellipse.h
-        ${SOURCE_AAMED} ${SOURCE_ED})
+        ${SOURCE_AAMED} ${SOURCE_ED} ED_Lib/ArucoDetect.cpp ED_Lib/ArucoDetect.h)
 include_directories(./aamed ./ED_Lib)
 target_link_libraries(demo ${OpenCV_LIBS})
