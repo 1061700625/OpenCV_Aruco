@@ -313,18 +313,25 @@ void testCamera() {
 }
 
 
-Mat testDetect(Mat &markerImage, bool diamond = true, bool aamed=false) {
+Mat testDetect(Mat &markerImage, bool diamond = true, bool aamed=false, bool show=false) {
     /*************************************检测椭圆*****************************************************/
     // FeaturePoint(img ,img2);
     // EDCircle(markerImage);
+    float t1, t2, tdelt;
     vector<Mat> results;
     Mat fullSplitImage;
+
     if(aamed) {
+        t1 = cv::getTickCount();
         AAMED_Fled(markerImage, fullSplitImage, results);
+        t2 = cv::getTickCount();
+        tdelt = 1000.0*(t2-t1) / cv::getTickFrequency();
+        std::cout << "AAMED耗时(ms)：" << tdelt << std::endl;
     }else {
         results.emplace_back(markerImage);
         fullSplitImage = markerImage.clone();
     }
+
     /************************************************************************************************/
 
     // 对每个椭圆区域进行检测
@@ -335,7 +342,7 @@ Mat testDetect(Mat &markerImage, bool diamond = true, bool aamed=false) {
         vector<vector<Point2f>> markerCorners;
         vector<int> markerIds;
         vector<vector<Point2f>> rejectedCandidates;
-
+        t1 = cv::getTickCount();
         // cv::copyMakeBorder(cropSplitImage, cropSplitImage, 5, 5, 5, 5, cv::BORDER_CONSTANT, Scalar(255,0,0));
         detectAruco(cropSplitImage, markerCorners, rejectedCandidates, markerIds);
         if (markerCorners.empty()) {
@@ -343,27 +350,37 @@ Mat testDetect(Mat &markerImage, bool diamond = true, bool aamed=false) {
             return fullSplitImage;
         }
         // 显示检测到的但是由于字典对不上被拒绝的Marker
-        if (!rejectedCandidates.empty()){
-            cout<<"一共有 "<<rejectedCandidates.size()<<" 个被拒绝的 Marker "<<endl;
-            for (auto & rejectedCandidate : rejectedCandidates) {
-                for (int i=0;i<4;i++) {
-                    cv::circle(fullSplitImage,cv::Point(rejectedCandidate[i].x,rejectedCandidate[i].y),6,cv::Scalar(0,0,255));
+        if(show) {
+            if (!rejectedCandidates.empty()){
+                cout<<"一共有 "<<rejectedCandidates.size()<<" 个被拒绝的 Marker "<<endl;
+                for (auto & rejectedCandidate : rejectedCandidates) {
+                    for (int i=0;i<4;i++) {
+                        cv::circle(fullSplitImage,cv::Point(rejectedCandidate[i].x,rejectedCandidate[i].y),6,cv::Scalar(0,0,255));
+                    }
                 }
             }
         }
+
         if(diamond) {
             detectDiamon(cropSplitImage, markerCorners, markerIds, diamondCorners, diamondIds);
         }
+        t2 = cv::getTickCount();
+        tdelt = 1000.0*(t2-t1) / cv::getTickFrequency();
+        std::cout << "检测耗时(ms)：" << tdelt << std::endl;
+
 
         std::vector<cv::Vec3d> rvecs, tvecs;
         cv::Vec3d rvec, tvec;
+        t1 = cv::getTickCount();
         if(diamond) {
             if (diamondIds.empty()) {
                 cout<<"无可用diamondIds"<<endl;
                 continue;
             }
             // 绘制检测边框
-            cv::aruco::drawDetectedDiamonds(fullSplitImage, diamondCorners, diamondIds);
+            if(show) {
+                cv::aruco::drawDetectedDiamonds(fullSplitImage, diamondCorners, diamondIds);
+            }
             // 估计相机位姿(相对于每一个marker)  markerLength为什么是squareLength?
             cv::aruco::estimatePoseSingleMarkers(diamondCorners, markerLength, cameraMatrix, distCoeffs, rvecs, tvecs);
         }else {
@@ -372,33 +389,44 @@ Mat testDetect(Mat &markerImage, bool diamond = true, bool aamed=false) {
                 continue;
             }
             // 绘制检测边框
-            cv::aruco::drawDetectedMarkers(fullSplitImage, markerCorners, markerIds);
+            if(show) {
+                cv::aruco::drawDetectedMarkers(fullSplitImage, markerCorners, markerIds);
+            }
             // 估计相机位姿(相对于每一个marker)
             // cv::aruco::estimatePoseSingleMarkers(markerCorners, squareLength, cameraMatrix, distCoeffs, rvecs, tvecs);
             // 估计相机位姿(相对于 aruco 板)
             cv::aruco::estimatePoseBoard(markerCorners, markerIds, board, cameraMatrix, distCoeffs, rvec, tvec); rvecs.emplace_back(rvec); tvecs.emplace_back(tvec);
         }
+        t2 = cv::getTickCount();
+        tdelt = 1000.0*(t2-t1) / cv::getTickFrequency();
+        std::cout << "相机位姿估计耗时(ms)：" << tdelt << std::endl;
         // 为每个标记画轴
+        t1 = cv::getTickCount();
         for (int i = 0; i < rvecs.size(); ++i) {
             rvec = rvecs[i];
             tvec = tvecs[i];
             // 得到的位姿估计是：从board坐标系到相机坐标系的
             cv::Mat R;
             cv::Rodrigues(rvec,R);
-            cout << "R_{camera<---marker} :" << R << endl;
-            cout << "t_{camera<---marker} :" << tvec << endl;
             Eigen::Matrix3d R_eigen;
             cv::cv2eigen(R,R_eigen);
             // Eigen中使用右乘的顺序, 因此ZYX对应的是012, 实际上这个编号跟乘法的顺序一致就可以了(从左向右看的顺序)
             Eigen::Vector3d zyx_Euler_fromR = R_eigen.eulerAngles(0,1,2);
-            cout << "zyx旋转欧拉角[输出顺序为:x,y,z]: " << (180)/(M_PI)*zyx_Euler_fromR.transpose()<<endl;
-            cv::aruco::drawAxis(fullSplitImage, cameraMatrix, distCoeffs, rvec, tvec, 0.1);
+            if(show) {
+                cout << "R_{camera<---marker} :" << R << endl;
+                cout << "t_{camera<---marker} :" << tvec << endl;
+                cout << "zyx旋转欧拉角[输出顺序为:x,y,z]: " << (180)/(M_PI)*zyx_Euler_fromR.transpose()<<endl;
+                cv::aruco::drawAxis(fullSplitImage, cameraMatrix, distCoeffs, rvec, tvec, 0.1);
+                cout << "--------------------------------------------" << endl;
+            }
             //cv::aruco::drawAxis(markerImage, cameraMatrix, distCoeffs, rvec, tvec, 0.1);
-            cout << "--------------------------------------------" << endl;
         }
+        t2 = cv::getTickCount();
+        tdelt = 1000.0*(t2-t1) / cv::getTickFrequency();
+        std::cout << "欧拉角耗时(ms)：" << tdelt << std::endl;
     }
 
-    if (aamed) {
+    if (aamed && show) {
         imshow("markerImage", markerImage);
         //imshow("fullSplitImage", fullSplitImage);
         //imwrite("../fullSplitImage.png", fullSplitImage);
@@ -422,16 +450,25 @@ int main(int argc, char* argv[])
     //Mat markerImage = markerImages[0];
     cout<<">> 预处理完成!"<<endl;
 
-    /*
-    Mat markerImage = imread("../1.png", 1);
-    fullSplitImage = testDetect(markerImage, true, false);
+    /************************************************************************************************/
+
+    float t1, t2, tdelt;
+
+    Mat markerImage = imread("../img/4.jpg", 1);
+
+    t1 = cv::getTickCount();
+    fullSplitImage = testDetect(markerImage, false, false, true);
+    t2 = cv::getTickCount();
+    tdelt = 1000.0*(t2-t1) / cv::getTickFrequency();
+    std::cout << "一帧总耗时(ms)：" << tdelt << std::endl;
+
     imshow("fullSplitImage", fullSplitImage);
     waitKey(0);
     return 0;
-    */
+
+
 
     /************************************************************************************************/
-    float t1, t2, tdelt;
     Mat frame;
     VideoCapture capture;
     capture.open(0);
@@ -444,12 +481,14 @@ int main(int argc, char* argv[])
     cv::resizeWindow("fullSplitImage", 960, 540);
     for (;;) {
         capture.read(frame);
+        cv::resize(frame, frame, cv::Size(752, 480), 0, 0, cv::INTER_AREA);
+        cout << frame.size << endl;
         if (frame.empty()) {
             cerr << "ERROR! blank frame grabbed\n";
             break;
         }
         t1 = cv::getTickCount();
-        fullSplitImage = testDetect(frame, true, false);
+        fullSplitImage = testDetect(frame, false, false);
         t2 = cv::getTickCount();
         tdelt = 1000.0*(t2-t1) / cv::getTickFrequency();
         std::cout << "一帧耗时(ms)：" << tdelt << std::endl;
