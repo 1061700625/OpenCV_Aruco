@@ -13,7 +13,7 @@ ED_Lib：[椭圆检测](https://github.com/CihanTopal/ED_Lib)
 git clone git@github.com:CihanTopal/ED_Lib.git
 ```
 > 如果下载完ED_Lib后make报错，就在ED_Lib下添加`ArucoDetect.cpp`和`ArucoDetect.h`（或者直接删除这个的调用，因为目前什么都没做）：     
->** ArucoDetect.cpp**：
+> **ArucoDetect.cpp**：
 > ```c++
 > //
 > // Created by sxf on 22-4-23.
