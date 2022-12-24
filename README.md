@@ -9,3 +9,9 @@ ED_Lib：[椭圆检测](https://github.com/CihanTopal/ED_Lib)
 git clone git@github.com:CihanTopal/ED_Lib.git
 ```
 
+## 使用
+```
+cmake .
+make -j 4
+./demo
+```
